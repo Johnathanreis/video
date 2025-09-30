@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Vídeo interativo (pausa por clique + overlay recorrente)</title>
+  <title>Vídeo interativo (overlay e pausa por clique)</title>
   <style>
     html, body {
       margin: 0; padding: 0; height: 100%; width: 100%;
@@ -19,6 +19,7 @@
       object-fit: cover;
       pointer-events: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
     }
+    /* remove controles nativos */
     video::-webkit-media-controls,
     video::-webkit-media-controls-enclosure,
     video::-webkit-media-controls-panel { display: none !important; }
@@ -44,7 +45,7 @@
     }
     .overlay-start__box small { display: block; opacity: .8; font-weight: 500; margin-top: 6px; }
 
-    /* overlay de lembrete — aparece toda vez que pausar, some ao retomar */
+    /* overlay de lembrete — aparece toda vez que pausar; some ao retomar */
     .overlay-reminder {
       position: absolute; inset: 0; display: none; place-items: center;
       background: rgba(0,0,0,.55);
@@ -83,13 +84,6 @@
       background: linear-gradient(90deg, #ff0000, #cc0000);
       will-change: width; transition: width 0.08s linear;
     }
-
-    /* fallback */
-    .msg {
-      position: absolute; left: 12px; bottom: 14px;
-      color: #fff; opacity: .65; font-size: 12px; letter-spacing: .2px; display: none;
-    }
-    .show-msg .msg { display: block; }
   </style>
 </head>
 <body>
@@ -112,8 +106,6 @@
       <div class="overlay-reminder" id="overlayReminder" role="button" tabindex="0" aria-label="Clique para retomar o vídeo">
         <div class="overlay-reminder__box">termine de assistir o vídeo para receber sua receita</div>
       </div>
-
-      <div class="msg" id="msg">Não foi possível iniciar o vídeo. Verifique a conexão ou tente novamente.</div>
     </div>
 
     <div class="progress" aria-hidden="true">
@@ -125,12 +117,11 @@
     (function () {
       const video           = document.getElementById('vid');
       const bar             = document.getElementById('bar');
-      const root            = document.getElementById('wrap');
       const stage           = document.getElementById('stage');
       const overlayStart    = document.getElementById('overlayStart');
       const overlayReminder = document.getElementById('overlayReminder');
 
-      let hasStarted = false; // controla se o overlay inicial já foi usado
+      let hasStarted = false; // overlay inicial já foi usado?
 
       // Easing: mais rápido até a metade, desacelera depois
       const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -167,10 +158,9 @@
           video.muted = false;
           await video.play();
         } catch (e) {
-          console.error(e);
-          root.classList.add('show-msg');
-          overlayStart.classList.remove('hidden');
+          // se não conseguir tocar, o usuário pode tentar clicar de novo
           hasStarted = false;
+          overlayStart.classList.remove('hidden');
         }
       }
       overlayStart.addEventListener('click', startWithSound);
@@ -192,9 +182,7 @@
         overlayReminder.classList.remove('show');
         try {
           await video.play();
-        } catch (e) {
-          console.error(e);
-        }
+        } catch {}
       }
       overlayReminder.addEventListener('click', resumePlayback);
       overlayReminder.addEventListener('keydown', (e) => {
@@ -203,12 +191,11 @@
 
       // Garantias adicionais
       video.addEventListener('play', () => {
-        // ao tocar, garante que o lembrete não esteja visível
-        overlayReminder.classList.remove('show');
+        overlayReminder.classList.remove('show'); // ao tocar, some o lembrete
       });
 
       video.addEventListener('pause', () => {
-        // evento pause disparado por outras razões (teclado etc.)
+        // Se pausar por qualquer motivo (teclado, etc.), mostra lembrete (se já iniciou)
         if (hasStarted && video.currentTime > 0 && video.currentTime < (video.duration || 1)) {
           overlayReminder.classList.add('show');
         }
@@ -216,10 +203,6 @@
 
       video.addEventListener('ended', () => {
         overlayReminder.classList.remove('show');
-      });
-
-      video.addEventListener('error', () => {
-        root.classList.add('show-msg');
       });
     })();
   </script>
