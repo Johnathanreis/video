@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Vídeo interativo (clique para pausar / retomar)</title>
+  <title>Vídeo interativo (overlay único + pausa por clique)</title>
   <style>
     html, body {
       margin: 0; padding: 0; height: 100%; width: 100%;
@@ -23,7 +23,7 @@
     video::-webkit-media-controls-enclosure,
     video::-webkit-media-controls-panel { display: none !important; }
 
-    /* overlay inicial (começar com som) — vermelho transparente + pulso lento */
+    /* overlay inicial (apenas no começo) — vermelho transparente + pulso lento */
     .overlay-start {
       position: absolute; inset: 0; display: grid; place-items: center;
       background: rgba(0,0,0,.55);
@@ -44,7 +44,7 @@
     }
     .overlay-start__box small { display: block; opacity: .8; font-weight: 500; margin-top: 6px; }
 
-    /* overlay de lembrete quando pausar */
+    /* overlay de lembrete ao pausar (apenas uma vez) */
     .overlay-reminder {
       position: absolute; inset: 0; display: none; place-items: center;
       background: rgba(0,0,0,.55);
@@ -62,7 +62,6 @@
       cursor: pointer; user-select: none;
       animation: pulse 1.8s ease-in-out infinite;
       backdrop-filter: blur(1px);
-      text-transform: none;
     }
 
     @keyframes pulse {
@@ -95,13 +94,13 @@
 </head>
 <body>
   <div class="wrap" id="wrap">
-    <div class="stage" id="stage" role="button" tabindex="0" aria-label="Clique para pausar durante a reprodução">
+    <div class="stage" id="stage" role="button" tabindex="0" aria-label="Clique para pausar/retomar">
       <video id="vid" playsinline preload="auto" aria-hidden="true">
         <source src="monjaro-video.mp4" type="video/mp4">
         Seu navegador não suporta o elemento de vídeo.
       </video>
 
-      <!-- Overlay inicial (iniciar com som) -->
+      <!-- Overlay inicial (só no começo) -->
       <div class="overlay-start" id="overlayStart" role="button" tabindex="0" aria-label="Clique para ativar o som e iniciar">
         <div class="overlay-start__box">
           CLIQUE PARA ATIVAR O SOM
@@ -109,7 +108,7 @@
         </div>
       </div>
 
-      <!-- Overlay de lembrete ao pausar -->
+      <!-- Overlay de lembrete ao pausar (apenas uma vez) -->
       <div class="overlay-reminder" id="overlayReminder" role="button" tabindex="0" aria-label="Clique para retomar o vídeo">
         <div class="overlay-reminder__box">termine de assistir o vídeo para receber sua receita</div>
       </div>
@@ -131,19 +130,22 @@
       const overlayStart    = document.getElementById('overlayStart');
       const overlayReminder = document.getElementById('overlayReminder');
 
-      // Easing helpers: rápido até a metade, desacelera depois
-      const clamp01   = (x) => Math.max(0, Math.min(1, x));
-      const easeOutQ  = (x) => 1 - (1 - x) * (1 - x); // rápido no começo
-      const easeInQ   = (x) => x * x;                 // desacelera depois
+      let hasStarted = false;     // já iniciou com som?
+      let reminderUsed = false;   // lembrete já foi mostrado e consumido?
+
+      // Easing: rápido até a metade, desacelera depois
+      const clamp01 = (x) => Math.max(0, Math.min(1, x));
+      const easeOutQ = (x) => 1 - (1 - x) * (1 - x);
+      const easeInQ  = (x) => x * x;
 
       function displayProgress(u) {
         u = clamp01(u);
         if (u <= 0.5) {
-          const t = u / 0.5;               // 0..1
-          return 0.6 * easeOutQ(t);        // 0 -> 60% na metade
+          const t = u / 0.5;            // 0..1
+          return 0.6 * easeOutQ(t);     // 0 -> ~60% na metade
         } else {
-          const t = (u - 0.5) / 0.5;       // 0..1
-          return 0.6 + 0.4 * easeInQ(t);   // 60 -> 100% desacelerando
+          const t = (u - 0.5) / 0.5;    // 0..1
+          return 0.6 + 0.4 * easeInQ(t);// 60% -> 100% desacelerando
         }
       }
 
@@ -158,9 +160,10 @@
       }
       requestAnimationFrame(update);
 
-      // Iniciar com som ao clicar no overlay inicial
+      // Iniciar com som ao clicar no overlay inicial (apenas no começo)
       async function startWithSound() {
         overlayStart.classList.add('hidden');
+        hasStarted = true;
         try {
           video.muted = false;
           await video.play();
@@ -168,6 +171,7 @@
           console.error(e);
           root.classList.add('show-msg');
           overlayStart.classList.remove('hidden');
+          hasStarted = false;
         }
       }
       overlayStart.addEventListener('click', startWithSound);
@@ -175,33 +179,43 @@
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startWithSound(); }
       });
 
-      // Clique em qualquer lugar do vídeo (área stage) para PAUSAR e mostrar lembrete
+      // Clique em qualquer lugar do vídeo:
+      // - se ainda não começou, não faz nada (aguarda overlay inicial)
+      // - se está tocando: pausa imediatamente; primeira vez mostra o lembrete
+      // - se está pausado e lembrete já foi usado: retoma no clique
       stage.addEventListener('click', () => {
-        // Se ainda não começou (overlay inicial visível), não trata aqui
-        if (!overlayStart.classList.contains('hidden')) return;
+        if (!hasStarted) return; // aguarda o clique no overlay inicial
 
         if (!video.paused) {
-          // Pausa imediatamente e mostra lembrete
           video.pause();
-          overlayReminder.classList.add('show');
+          if (!reminderUsed) {
+            overlayReminder.classList.add('show'); // mostra lembrete só a primeira vez
+          }
+        } else {
+          if (reminderUsed) {
+            // depois de usado, clique na área volta a tocar sem overlay
+            video.play().catch(()=>{});
+          }
+          // se lembrete ainda não foi usado, o clique para retomar deve ser no próprio lembrete (abaixo)
         }
       });
 
-      // Retomar ao clicar no lembrete (ou Enter/Espaço)
-      async function resumePlayback() {
-        overlayReminder.classList.remove('show'); // esconde lembrete
+      // Clique no lembrete retoma e bloqueia reaparecimento futuro
+      async function resumeFromReminder() {
+        overlayReminder.classList.remove('show');
+        reminderUsed = true; // não mostrar mais overlays de mensagem
         try {
           await video.play();
         } catch (e) {
           console.error(e);
         }
       }
-      overlayReminder.addEventListener('click', resumePlayback);
+      overlayReminder.addEventListener('click', resumeFromReminder);
       overlayReminder.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); resumePlayback(); }
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); resumeFromReminder(); }
       });
 
-      // Garantir que, ao terminar, nenhum overlay fique aparecendo
+      // Garantia: ao terminar, nenhum overlay fica visível
       video.addEventListener('ended', () => {
         overlayReminder.classList.remove('show');
       });
