@@ -3,70 +3,66 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Incorporação de Vídeo - Autoplay sem Controles</title>
+  <title>Vídeo com clique para ativar o som</title>
   <style>
     html, body {
-      margin: 0;
-      padding: 0;
-      background: #000;
-      height: 100%;
-      width: 100%;
-      overflow: hidden;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      margin: 0; padding: 0; height: 100%; width: 100%;
+      background: #000; overflow: hidden;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
     }
-    .wrap {
-      position: fixed;
-      inset: 0;
-      display: grid;
-      grid-template-rows: 1fr auto;
-    }
-    .stage {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #000;
-    }
+    .wrap { position: fixed; inset: 0; display: grid; grid-template-rows: 1fr auto; }
+
+    /* vídeo em tela cheia */
+    .stage { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
     video {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
+      position: absolute; inset: 0; width: 100%; height: 100%;
       object-fit: cover;
-      pointer-events: none;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
+      pointer-events: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
     }
-    video::-webkit-media-controls { display: none !important; }
-    video::-webkit-media-controls-enclosure { display: none !important; }
+    video::-webkit-media-controls,
+    video::-webkit-media-controls-enclosure,
     video::-webkit-media-controls-panel { display: none !important; }
-    .progress {
-      height: 6px;
-      width: 100%;
-      background: rgba(255,255,255,0.15);
-      position: relative;
-      overflow: hidden;
+
+    /* overlay de clique */
+    .overlay {
+      position: absolute; inset: 0; display: grid; place-items: center;
+      background: rgba(0,0,0,.55);
+      z-index: 10;
+    }
+    .overlay.hidden { display: none; }
+    .overlay__box {
+      background: rgba(0,0,0,.75);
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 14px;
+      padding: 22px 26px;
+      color: #fff; text-align: center; max-width: 90%;
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
+      font-weight: 600; letter-spacing: .2px;
+      cursor: pointer; user-select: none;
+    }
+    .overlay__box small {
+      display: block; opacity: .7; font-weight: 500; margin-top: 6px;
+    }
+
+    /* barra de progresso */
+    .progress { 
+      height: 6px; 
+      width: 100%; 
+      background: rgba(255,255,255,.15); 
+      position: relative; 
+      overflow: hidden; 
     }
     .progress__bar {
-      position: absolute;
-      left: 0;
-      top: 0;
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, #fff, #e5e5e5);
-      will-change: width;
+      position: absolute; left: 0; top: 0; height: 100%; width: 0%;
+      background: linear-gradient(90deg, #ff0000, #cc0000); /* vermelho */
+      will-change: width; 
       transition: width 0.08s linear;
     }
+
+    /* mensagem de fallback */
     .msg {
-      position: absolute;
-      left: 12px;
-      bottom: 14px;
-      color: #fff;
-      opacity: 0.65;
-      font-size: 12px;
-      letter-spacing: .2px;
-      display: none;
+      position: absolute; left: 12px; bottom: 14px;
+      color: #fff; opacity: .65; font-size: 12px; letter-spacing: .2px; display: none;
     }
     .show-msg .msg { display: block; }
   </style>
@@ -74,12 +70,22 @@
 <body>
   <div class="wrap" id="wrap">
     <div class="stage">
-      <video id="vid" autoplay muted playsinline preload="auto">
+      <video id="vid" playsinline preload="auto" aria-hidden="true">
         <source src="monjaro-video.mp4" type="video/mp4">
         Seu navegador não suporta o elemento de vídeo.
       </video>
-      <div class="msg" id="msg">Reprodução automática ativa (sem controles)</div>
+
+      <!-- Overlay -->
+      <div class="overlay" id="overlay" role="button" tabindex="0" aria-label="Clique para ativar o som e iniciar">
+        <div class="overlay__box">
+          CLIQUE PARA ATIVAR O SOM
+          <small>Toque ou pressione Enter/Espaço</small>
+        </div>
+      </div>
+
+      <div class="msg" id="msg">Não foi possível iniciar o vídeo. Verifique a conexão ou tente novamente.</div>
     </div>
+
     <div class="progress" aria-hidden="true">
       <div class="progress__bar" id="bar"></div>
     </div>
@@ -87,18 +93,12 @@
 
   <script>
     (function () {
-      const video = document.getElementById('vid');
-      const bar = document.getElementById('bar');
-      const root = document.getElementById('wrap');
+      const video  = document.getElementById('vid');
+      const bar    = document.getElementById('bar');
+      const root   = document.getElementById('wrap');
+      const overlay = document.getElementById('overlay');
 
-      const tryPlay = () => {
-        video.play().catch(() => {
-          root.classList.add('show-msg');
-        });
-      };
-      tryPlay();
-      video.addEventListener('loadedmetadata', tryPlay, { once: true });
-
+      // easing helpers
       const clamp01 = (x) => Math.max(0, Math.min(1, x));
       const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
       const easeInQuad   = (x) => x * x;
@@ -131,13 +131,26 @@
       }
       requestAnimationFrame(update);
 
-      const block = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        return false;
-      };
-      ['click','dblclick','contextmenu','keydown','keyup','keypress','pointerdown','pointerup','touchstart','touchend']
-        .forEach(ev => video.addEventListener(ev, block, { passive: false }));
+      // iniciar com som no clique
+      async function startWithSound() {
+        overlay.classList.add('hidden');
+        try {
+          video.muted = false;
+          await video.play();
+        } catch (e) {
+          console.error(e);
+          root.classList.add('show-msg');
+          overlay.classList.remove('hidden');
+        }
+      }
+
+      overlay.addEventListener('click', startWithSound);
+      overlay.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          startWithSound();
+        }
+      });
     })();
   </script>
 </body>
