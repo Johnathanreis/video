@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Vídeo interativo (pausa por clique + overlays)</title>
+  <title>Vídeo interativo (pausa por clique + overlay recorrente)</title>
   <style>
     html, body {
       margin: 0; padding: 0; height: 100%; width: 100%;
@@ -12,7 +12,7 @@
     }
     .wrap { position: fixed; inset: 0; display: grid; grid-template-rows: 1fr auto; }
 
-    /* área do vídeo */
+    /* vídeo em tela cheia */
     .stage { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
     video {
       position: absolute; inset: 0; width: 100%; height: 100%;
@@ -23,7 +23,7 @@
     video::-webkit-media-controls-enclosure,
     video::-webkit-media-controls-panel { display: none !important; }
 
-    /* overlay inicial (só no começo) */
+    /* overlay inicial — aparece só no começo e nunca mais */
     .overlay-start {
       position: absolute; inset: 0; display: grid; place-items: center;
       background: rgba(0,0,0,.55);
@@ -44,7 +44,7 @@
     }
     .overlay-start__box small { display: block; opacity: .8; font-weight: 500; margin-top: 6px; }
 
-    /* overlay de pausa: aparece sempre que pausar, some ao retomar */
+    /* overlay de lembrete — aparece toda vez que pausar, some ao retomar */
     .overlay-reminder {
       position: absolute; inset: 0; display: none; place-items: center;
       background: rgba(0,0,0,.55);
@@ -57,4 +57,171 @@
       border-radius: 14px;
       padding: 22px 26px;
       color: #fff; text-align: center; max-width: 90%;
-      box-shadow
+      box-shadow: 0 10px 30px rgba(255,0,0,.25);
+      font-weight: 700; letter-spacing: .3px;
+      cursor: pointer; user-select: none;
+      animation: pulse 1.8s ease-in-out infinite;
+      backdrop-filter: blur(1px);
+    }
+
+    @keyframes pulse {
+      0%   { transform: scale(1);   box-shadow: 0 10px 30px rgba(255,0,0,.25); }
+      50%  { transform: scale(1.06); box-shadow: 0 14px 40px rgba(255,0,0,.35); }
+      100% { transform: scale(1);   box-shadow: 0 10px 30px rgba(255,0,0,.25); }
+    }
+
+    /* barra de progresso (10px, vermelha) */
+    .progress {
+      height: 10px;
+      width: 100%;
+      background: rgba(255,255,255,.12);
+      position: relative;
+      overflow: hidden;
+    }
+    .progress__bar {
+      position: absolute; left: 0; top: 0; height: 100%; width: 0%;
+      background: linear-gradient(90deg, #ff0000, #cc0000);
+      will-change: width; transition: width 0.08s linear;
+    }
+
+    /* fallback */
+    .msg {
+      position: absolute; left: 12px; bottom: 14px;
+      color: #fff; opacity: .65; font-size: 12px; letter-spacing: .2px; display: none;
+    }
+    .show-msg .msg { display: block; }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="wrap">
+    <div class="stage" id="stage" role="button" tabindex="0" aria-label="Clique para pausar durante a reprodução">
+      <video id="vid" playsinline preload="auto" aria-hidden="true">
+        <source src="monjaro-video.mp4" type="video/mp4">
+        Seu navegador não suporta o elemento de vídeo.
+      </video>
+
+      <!-- Overlay inicial (só no começo) -->
+      <div class="overlay-start" id="overlayStart" role="button" tabindex="0" aria-label="Clique para ativar o som e iniciar">
+        <div class="overlay-start__box">
+          CLIQUE PARA ATIVAR O SOM
+          <small>Toque ou pressione Enter/Espaço</small>
+        </div>
+      </div>
+
+      <!-- Overlay de lembrete (aparece a cada pausa; some ao retomar) -->
+      <div class="overlay-reminder" id="overlayReminder" role="button" tabindex="0" aria-label="Clique para retomar o vídeo">
+        <div class="overlay-reminder__box">termine de assistir o vídeo para receber sua receita</div>
+      </div>
+
+      <div class="msg" id="msg">Não foi possível iniciar o vídeo. Verifique a conexão ou tente novamente.</div>
+    </div>
+
+    <div class="progress" aria-hidden="true">
+      <div class="progress__bar" id="bar"></div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const video           = document.getElementById('vid');
+      const bar             = document.getElementById('bar');
+      const root            = document.getElementById('wrap');
+      const stage           = document.getElementById('stage');
+      const overlayStart    = document.getElementById('overlayStart');
+      const overlayReminder = document.getElementById('overlayReminder');
+
+      let hasStarted = false; // controla se o overlay inicial já foi usado
+
+      // Easing: mais rápido até a metade, desacelera depois
+      const clamp01 = (x) => Math.max(0, Math.min(1, x));
+      const easeOutQ = (x) => 1 - (1 - x) * (1 - x);
+      const easeInQ  = (x) => x * x;
+
+      function displayProgress(u) {
+        u = clamp01(u);
+        if (u <= 0.5) {
+          const t = u / 0.5;             // 0..1
+          return 0.6 * easeOutQ(t);      // 0 -> ~60% na metade
+        } else {
+          const t = (u - 0.5) / 0.5;     // 0..1
+          return 0.6 + 0.4 * easeInQ(t); // 60% -> 100% desacelerando
+        }
+      }
+
+      function update() {
+        const dur = video.duration || 0;
+        if (dur > 0) {
+          const u = clamp01(video.currentTime / dur);
+          const shown = displayProgress(u);
+          bar.style.width = (shown * 100).toFixed(3) + '%';
+        }
+        requestAnimationFrame(update);
+      }
+      requestAnimationFrame(update);
+
+      // Iniciar com som ao clicar no overlay inicial (depois some para sempre)
+      async function startWithSound() {
+        overlayStart.classList.add('hidden');
+        hasStarted = true;
+        try {
+          video.muted = false;
+          await video.play();
+        } catch (e) {
+          console.error(e);
+          root.classList.add('show-msg');
+          overlayStart.classList.remove('hidden');
+          hasStarted = false;
+        }
+      }
+      overlayStart.addEventListener('click', startWithSound);
+      overlayStart.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startWithSound(); }
+      });
+
+      // Clique em qualquer lugar do vídeo para PAUSAR (quando já iniciou)
+      stage.addEventListener('click', () => {
+        if (!hasStarted) return;         // antes de iniciar, só o overlayStart responde
+        if (!video.paused) {
+          video.pause();
+          overlayReminder.classList.add('show'); // mostra lembrete sempre que pausar
+        }
+      });
+
+      // Clique no overlay de lembrete para RETOMAR (e esconder a mensagem)
+      async function resumePlayback() {
+        overlayReminder.classList.remove('show');
+        try {
+          await video.play();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      overlayReminder.addEventListener('click', resumePlayback);
+      overlayReminder.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); resumePlayback(); }
+      });
+
+      // Garantias adicionais
+      video.addEventListener('play', () => {
+        // ao tocar, garante que o lembrete não esteja visível
+        overlayReminder.classList.remove('show');
+      });
+
+      video.addEventListener('pause', () => {
+        // evento pause disparado por outras razões (teclado etc.)
+        if (hasStarted && video.currentTime > 0 && video.currentTime < (video.duration || 1)) {
+          overlayReminder.classList.add('show');
+        }
+      });
+
+      video.addEventListener('ended', () => {
+        overlayReminder.classList.remove('show');
+      });
+
+      video.addEventListener('error', () => {
+        root.classList.add('show-msg');
+      });
+    })();
+  </script>
+</body>
+</html>
