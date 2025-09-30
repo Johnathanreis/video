@@ -23,39 +23,49 @@
     video::-webkit-media-controls-enclosure,
     video::-webkit-media-controls-panel { display: none !important; }
 
-    /* overlay de clique */
+    /* overlay de clique (vermelho transparente + pulso lento) */
     .overlay {
       position: absolute; inset: 0; display: grid; place-items: center;
       background: rgba(0,0,0,.55);
       z-index: 10;
     }
     .overlay.hidden { display: none; }
+
     .overlay__box {
-      background: rgba(0,0,0,.75);
-      border: 1px solid rgba(255,255,255,.25);
+      background: rgba(255,0,0,.28);               /* vermelho transparente */
+      border: 2px solid rgba(255,0,0,.55);
       border-radius: 14px;
       padding: 22px 26px;
       color: #fff; text-align: center; max-width: 90%;
-      box-shadow: 0 10px 30px rgba(0,0,0,.35);
-      font-weight: 600; letter-spacing: .2px;
+      box-shadow: 0 10px 30px rgba(255,0,0,.25);
+      font-weight: 700; letter-spacing: .3px;
       cursor: pointer; user-select: none;
+
+      /* pulso lento */
+      animation: pulse 1.8s ease-in-out infinite;
+      backdrop-filter: blur(1px);
     }
     .overlay__box small {
-      display: block; opacity: .7; font-weight: 500; margin-top: 6px;
+      display: block; opacity: .8; font-weight: 500; margin-top: 6px;
+    }
+    @keyframes pulse {
+      0%   { transform: scale(1);   box-shadow: 0 10px 30px rgba(255,0,0,.25); }
+      50%  { transform: scale(1.06); box-shadow: 0 14px 40px rgba(255,0,0,.35); }
+      100% { transform: scale(1);   box-shadow: 0 10px 30px rgba(255,0,0,.25); }
     }
 
-    /* barra de progresso */
-    .progress { 
-      height: 6px; 
-      width: 100%; 
-      background: rgba(255,255,255,.15); 
-      position: relative; 
-      overflow: hidden; 
+    /* barra de progresso (maior e vermelha) */
+    .progress {
+      height: 10px;                     /* maior */
+      width: 100%;
+      background: rgba(255,255,255,.12);
+      position: relative;
+      overflow: hidden;
     }
     .progress__bar {
       position: absolute; left: 0; top: 0; height: 100%; width: 0%;
       background: linear-gradient(90deg, #ff0000, #cc0000); /* vermelho */
-      will-change: width; 
+      will-change: width;
       transition: width 0.08s linear;
     }
 
@@ -93,30 +103,29 @@
 
   <script>
     (function () {
-      const video  = document.getElementById('vid');
-      const bar    = document.getElementById('bar');
-      const root   = document.getElementById('wrap');
+      const video   = document.getElementById('vid');
+      const bar     = document.getElementById('bar');
+      const root    = document.getElementById('wrap');
       const overlay = document.getElementById('overlay');
 
-      // easing helpers
+      // helpers
       const clamp01 = (x) => Math.max(0, Math.min(1, x));
-      const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
-      const easeInQuad   = (x) => x * x;
-      const easeOutQuad  = (x) => 1 - (1 - x) * (1 - x);
+      const easeOutQuad = (x) => 1 - (1 - x) * (1 - x); // rápido no começo
+      const easeInQuad  = (x) => x * x;                 // lento no começo
 
+      /* 
+        Progresso exibido:
+        - 0..0.5 do tempo: "mais rápido" (mapeado para 0..0.6 com easeOut)
+        - 0.5..1 do tempo: "desacelerando" (0.6..1 com easeIn)
+      */
       function displayProgress(u) {
         u = clamp01(u);
         if (u <= 0.5) {
-          return 0.5 * easeOutCubic(u / 0.5);
-        } else if (u <= 0.75) {
-          const t = (u - 0.5) / 0.25;
-          return 0.5 + 0.1 * t;
-        } else if (u <= 0.9) {
-          const t = (u - 0.75) / 0.15;
-          return 0.6 + 0.3 * easeInQuad(t);
+          const t = u / 0.5;                     // 0..1
+          return 0.6 * easeOutQuad(t);           // até ~60% na metade
         } else {
-          const t = (u - 0.9) / 0.1;
-          return 0.9 + 0.1 * easeOutQuad(t);
+          const t = (u - 0.5) / 0.5;             // 0..1
+          return 0.6 + 0.4 * easeInQuad(t);      // 60% -> 100% desacelerando
         }
       }
 
