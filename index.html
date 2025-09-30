@@ -151,21 +151,23 @@
       requestAnimationFrame(update);
 
       // Iniciar com som ao clicar no overlay inicial (depois some para sempre)
-      async function startWithSound() {
+      async function startWithSound(e) {
+        // impede que o clique "caia" no stage e pause logo em seguida
+        e.stopPropagation();
         overlayStart.classList.add('hidden');
         hasStarted = true;
         try {
           video.muted = false;
           await video.play();
-        } catch (e) {
-          // se não conseguir tocar, o usuário pode tentar clicar de novo
+        } catch (err) {
+          // se falhar, permite tentar de novo
           hasStarted = false;
           overlayStart.classList.remove('hidden');
         }
       }
       overlayStart.addEventListener('click', startWithSound);
       overlayStart.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startWithSound(); }
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startWithSound(e); }
       });
 
       // Clique em qualquer lugar do vídeo para PAUSAR (quando já iniciou)
@@ -178,15 +180,15 @@
       });
 
       // Clique no overlay de lembrete para RETOMAR (e esconder a mensagem)
-      async function resumePlayback() {
+      async function resumePlayback(e) {
+        // impede que o clique vaze para o stage e pause de novo
+        e.stopPropagation();
         overlayReminder.classList.remove('show');
-        try {
-          await video.play();
-        } catch {}
+        try { await video.play(); } catch {}
       }
       overlayReminder.addEventListener('click', resumePlayback);
       overlayReminder.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); resumePlayback(); }
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); resumePlayback(e); }
       });
 
       // Garantias adicionais
@@ -195,7 +197,7 @@
       });
 
       video.addEventListener('pause', () => {
-        // Se pausar por qualquer motivo (teclado, etc.), mostra lembrete (se já iniciou)
+        // Se pausar por outras razões (teclado, etc.), mostra lembrete (se já iniciou e não acabou)
         if (hasStarted && video.currentTime > 0 && video.currentTime < (video.duration || 1)) {
           overlayReminder.classList.add('show');
         }
