@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Vídeo com clique para ativar o som</title>
+  <title>Vídeo com clique, pausa e lembrete</title>
   <style>
     html, body {
       margin: 0; padding: 0; height: 100%; width: 100%;
@@ -12,7 +12,7 @@
     }
     .wrap { position: fixed; inset: 0; display: grid; grid-template-rows: 1fr auto; }
 
-    /* vídeo em tela cheia */
+    /* Vídeo em tela cheia, sem interação direta */
     .stage { position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }
     video {
       position: absolute; inset: 0; width: 100%; height: 100%;
@@ -23,16 +23,15 @@
     video::-webkit-media-controls-enclosure,
     video::-webkit-media-controls-panel { display: none !important; }
 
-    /* overlay de clique (vermelho transparente + pulso lento) */
-    .overlay {
+    /* Overlay inicial: vermelho transparente + pulso lento */
+    .overlay-start {
       position: absolute; inset: 0; display: grid; place-items: center;
       background: rgba(0,0,0,.55);
       z-index: 10;
     }
-    .overlay.hidden { display: none; }
-
-    .overlay__box {
-      background: rgba(255,0,0,.28);               /* vermelho transparente */
+    .overlay-start.hidden { display: none; }
+    .overlay-start__box {
+      background: rgba(255,0,0,.28);
       border: 2px solid rgba(255,0,0,.55);
       border-radius: 14px;
       padding: 22px 26px;
@@ -40,23 +39,63 @@
       box-shadow: 0 10px 30px rgba(255,0,0,.25);
       font-weight: 700; letter-spacing: .3px;
       cursor: pointer; user-select: none;
-
-      /* pulso lento */
       animation: pulse 1.8s ease-in-out infinite;
       backdrop-filter: blur(1px);
     }
-    .overlay__box small {
-      display: block; opacity: .8; font-weight: 500; margin-top: 6px;
+    .overlay-start__box small { display: block; opacity: .8; font-weight: 500; margin-top: 6px; }
+
+    /* Overlay de lembrete quando estiver PAUSADO */
+    .overlay-reminder {
+      position: absolute; inset: 0; display: none; place-items: center;
+      background: rgba(0,0,0,.55);
+      z-index: 11;
     }
+    .overlay-reminder.show { display: grid; }
+    .overlay-reminder__box {
+      background: rgba(255,0,0,.28);
+      border: 2px solid rgba(255,0,0,.55);
+      border-radius: 14px;
+      padding: 22px 26px;
+      color: #fff; text-align: center; max-width: 90%;
+      box-shadow: 0 10px 30px rgba(255,0,0,.25);
+      font-weight: 700; letter-spacing: .3px;
+      cursor: pointer; user-select: none;
+      animation: pulse 1.8s ease-in-out infinite;
+      backdrop-filter: blur(1px);
+    }
+
     @keyframes pulse {
       0%   { transform: scale(1);   box-shadow: 0 10px 30px rgba(255,0,0,.25); }
       50%  { transform: scale(1.06); box-shadow: 0 14px 40px rgba(255,0,0,.35); }
       100% { transform: scale(1);   box-shadow: 0 10px 30px rgba(255,0,0,.25); }
     }
 
-    /* barra de progresso (maior e vermelha) */
+    /* Botão de pausa (aparece apenas após o 1º clique) */
+    .pause-btn {
+      position: absolute; right: 12px; bottom: 18px; z-index: 9;
+      width: 46px; height: 46px; border-radius: 50%;
+      background: rgba(255,255,255,.15);
+      border: 1px solid rgba(255,255,255,.35);
+      display: none; align-items: center; justify-content: center;
+      cursor: pointer; user-select: none; backdrop-filter: blur(2px);
+      transition: transform .12s ease, background .2s ease;
+    }
+    .pause-btn.show { display: flex; }
+    .pause-btn:hover { background: rgba(255,255,255,.22); transform: scale(1.02); }
+    .pause-icon {
+      width: 14px; height: 18px; position: relative;
+    }
+    .pause-icon::before,
+    .pause-icon::after {
+      content: ""; position: absolute; top: 0; width: 4px; height: 100%;
+      background: rgba(255,255,255,.9); border-radius: 1px;
+    }
+    .pause-icon::before { left: 0; }
+    .pause-icon::after  { right: 0; }
+
+    /* Barra de progresso maior (10px) e vermelha */
     .progress {
-      height: 10px;                     /* maior */
+      height: 10px;
       width: 100%;
       background: rgba(255,255,255,.12);
       position: relative;
@@ -64,12 +103,11 @@
     }
     .progress__bar {
       position: absolute; left: 0; top: 0; height: 100%; width: 0%;
-      background: linear-gradient(90deg, #ff0000, #cc0000); /* vermelho */
-      will-change: width;
-      transition: width 0.08s linear;
+      background: linear-gradient(90deg, #ff0000, #cc0000);
+      will-change: width; transition: width 0.08s linear;
     }
 
-    /* mensagem de fallback */
+    /* Mensagem de fallback */
     .msg {
       position: absolute; left: 12px; bottom: 14px;
       color: #fff; opacity: .65; font-size: 12px; letter-spacing: .2px; display: none;
@@ -79,18 +117,28 @@
 </head>
 <body>
   <div class="wrap" id="wrap">
-    <div class="stage">
+    <div class="stage" id="stage">
       <video id="vid" playsinline preload="auto" aria-hidden="true">
         <source src="monjaro-video.mp4" type="video/mp4">
         Seu navegador não suporta o elemento de vídeo.
       </video>
 
-      <!-- Overlay -->
-      <div class="overlay" id="overlay" role="button" tabindex="0" aria-label="Clique para ativar o som e iniciar">
-        <div class="overlay__box">
+      <!-- Overlay inicial -->
+      <div class="overlay-start" id="overlayStart" role="button" tabindex="0" aria-label="Clique para ativar o som e iniciar">
+        <div class="overlay-start__box">
           CLIQUE PARA ATIVAR O SOM
           <small>Toque ou pressione Enter/Espaço</small>
         </div>
+      </div>
+
+      <!-- Overlay de lembrete quando pausar -->
+      <div class="overlay-reminder" id="overlayReminder" role="button" tabindex="0" aria-label="Clique para retomar o vídeo">
+        <div class="overlay-reminder__box">termine de assistir o vídeo para receber sua receita</div>
+      </div>
+
+      <!-- Botão de pausa -->
+      <div class="pause-btn" id="pauseBtn" aria-label="Pausar vídeo">
+        <div class="pause-icon" aria-hidden="true"></div>
       </div>
 
       <div class="msg" id="msg">Não foi possível iniciar o vídeo. Verifique a conexão ou tente novamente.</div>
@@ -103,29 +151,31 @@
 
   <script>
     (function () {
-      const video   = document.getElementById('vid');
-      const bar     = document.getElementById('bar');
-      const root    = document.getElementById('wrap');
-      const overlay = document.getElementById('overlay');
+      const video    = document.getElementById('vid');
+      const bar      = document.getElementById('bar');
+      const root     = document.getElementById('wrap');
+      const stage    = document.getElementById('stage');
+      const overlayStart    = document.getElementById('overlayStart');
+      const overlayReminder = document.getElementById('overlayReminder');
+      const pauseBtn        = document.getElementById('pauseBtn');
 
-      // helpers
+      // Helpers para easing
       const clamp01 = (x) => Math.max(0, Math.min(1, x));
-      const easeOutQuad = (x) => 1 - (1 - x) * (1 - x); // rápido no começo
-      const easeInQuad  = (x) => x * x;                 // lento no começo
+      const easeOutQuad = (x) => 1 - (1 - x) * (1 - x); // mais rápido no começo
+      const easeInQuad  = (x) => x * x;                 // desacelera depois
 
-      /* 
-        Progresso exibido:
-        - 0..0.5 do tempo: "mais rápido" (mapeado para 0..0.6 com easeOut)
-        - 0.5..1 do tempo: "desacelerando" (0.6..1 com easeIn)
+      /* Mapeamento de exibição da barra:
+         - 0..0.5 do tempo: mais rápido (0..0.6 com easeOutQuad)
+         - 0.5..1 do tempo: desacelerando (0.6..1 com easeInQuad)
       */
       function displayProgress(u) {
         u = clamp01(u);
         if (u <= 0.5) {
-          const t = u / 0.5;                     // 0..1
-          return 0.6 * easeOutQuad(t);           // até ~60% na metade
+          const t = u / 0.5;                 // 0..1
+          return 0.6 * easeOutQuad(t);       // ~0% -> 60% na metade
         } else {
-          const t = (u - 0.5) / 0.5;             // 0..1
-          return 0.6 + 0.4 * easeInQuad(t);      // 60% -> 100% desacelerando
+          const t = (u - 0.5) / 0.5;         // 0..1
+          return 0.6 + 0.4 * easeInQuad(t);  // 60% -> 100% desacelerando
         }
       }
 
@@ -140,25 +190,72 @@
       }
       requestAnimationFrame(update);
 
-      // iniciar com som no clique
+      // Iniciar com som ao clicar no overlay inicial
       async function startWithSound() {
-        overlay.classList.add('hidden');
+        overlayStart.classList.add('hidden');
         try {
           video.muted = false;
           await video.play();
+          // Após o primeiro clique (início), exibe o botão de pausa
+          pauseBtn.classList.add('show');
         } catch (e) {
           console.error(e);
           root.classList.add('show-msg');
-          overlay.classList.remove('hidden');
+          overlayStart.classList.remove('hidden');
         }
       }
 
-      overlay.addEventListener('click', startWithSound);
-      overlay.addEventListener('keydown', (e) => {
+      overlayStart.addEventListener('click', startWithSound);
+      overlayStart.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          startWithSound();
+          e.preventDefault(); startWithSound();
         }
+      });
+
+      // Pausar ao clicar no botão de pausa
+      pauseBtn.addEventListener('click', async () => {
+        try {
+          video.pause();
+          pauseBtn.classList.remove('show');       // esconde o botão de pausa
+          overlayReminder.classList.add('show');   // mostra o lembrete pulsante
+        } catch (e) {}
+      });
+
+      // Retomar ao clicar no lembrete (ou pressionar Enter/Espaço)
+      async function resumePlayback() {
+        overlayReminder.classList.remove('show');  // esconde lembrete
+        pauseBtn.classList.remove('show');         // "todos os botões somem" ao retomar
+        try {
+          await video.play();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      overlayReminder.addEventListener('click', resumePlayback);
+      overlayReminder.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); resumePlayback(); }
+      });
+
+      // Opcional: se o usuário clicar na área do vídeo depois do início, também pode revelar o botão de pausa
+      stage.addEventListener('click', () => {
+        if (!overlayStart.classList.contains('hidden')) return; // ainda não começou
+        if (!video.paused) {
+          // Mostra o botão de pausa por alguns segundos (se quiser torná-lo temporário)
+          pauseBtn.classList.add('show');
+          // Se preferir esconder depois de um tempo, descomente:
+          // setTimeout(() => pauseBtn.classList.remove('show'), 2500);
+        }
+      }, false);
+
+      // Se o vídeo terminar, garante que não fique nenhum overlay/botão sobrando
+      video.addEventListener('ended', () => {
+        overlayReminder.classList.remove('show');
+        pauseBtn.classList.remove('show');
+      });
+
+      // Fallback de erro
+      video.addEventListener('error', () => {
+        root.classList.add('show-msg');
       });
     })();
   </script>
