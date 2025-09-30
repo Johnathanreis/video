@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Incorporação de Vídeo - Autoplay sem Controles</title>
+  <style>
+    /* Layout básico */
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    }
+    .wrap {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      grid-template-rows: 1fr auto;
+    }
+    /* Vídeo ocupa a tela toda */
+    .stage {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+    }
+    video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      /* Desabilita qualquer interação do usuário */
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+    /* Força remoção de possíveis overlays nativos em alguns navegadores */
+    video::-webkit-media-controls { display: none !important; }
+    video::-webkit-media-controls-enclosure { display: none !important; }
+    video::-webkit-media-controls-panel { display: none !important; }
+
+    /* Barra de progresso custom */
+    .progress {
+      height: 6px;
+      width: 100%;
+      background: rgba(255,255,255,0.15);
+      position: relative;
+      overflow: hidden;
+    }
+    .progress__bar {
+      position: absolute;
+      left: 0;
+      top: 0;
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #fff, #e5e5e5);
+      will-change: width;
+      transition: width 0.08s linear; /* atualização suave */
+    }
+    /* Fallback: mensagem pequena (não exibida quando tudo ok) */
+    .msg {
+      position: absolute;
+      left: 12px;
+      bottom: 14px;
+      color: #fff;
+      opacity: 0.65;
+      font-size: 12px;
+      letter-spacing: .2px;
+      display: none;
+    }
+    .show-msg .msg { display: block; }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="wrap">
+    <div class="stage">
+      <video id="vid"
+             autoplay
+             muted
+             playsinline
+             preload="auto">
+        <source src="Mounjaro de Pobre - Protocolo Natural de Emagrecimento.mp4" type="video/mp4">
+        Seu navegador não suporta o elemento de vídeo.
+      </video>
+      <div class="msg" id="msg">Reprodução automática ativa (sem controles)</div>
+    </div>
+    <div class="progress" aria-hidden="true">
+      <div class="progress__bar" id="bar"></div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const video = document.getElementById('vid');
+      const bar = document.getElementById('bar');
+      const root = document.getElementById('wrap');
+      const msg = document.getElementById('msg');
+
+      // Em alguns navegadores móveis, autoplay só funciona com muted + playsinline
+      // Tentativa extra de iniciar assim que possível.
+      const tryPlay = () => {
+        video.play().then(() => {
+          // ok
+        }).catch(() => {
+          // Se falhar, mostramos uma msg suave (ainda sem interação possível)
+          root.classList.add('show-msg');
+        });
+      };
+
+      // Chama logo e também quando a metadata carregar
+      tryPlay();
+      video.addEventListener('loadedmetadata', tryPlay, { once: true });
+
+      // Funções de easing auxiliares
+      const clamp01 = (x) => Math.max(0, Math.min(1, x));
+      const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
+      const easeInQuad   = (x) => x * x;
+      const easeOutQuad  = (x) => 1 - (1 - x) * (1 - x);
+
+      // Mapeamento customizado:
+      // - 0.00–0.50: rápido no começo e desacelera (easeOutCubic)
+      // - 0.50–0.75: fica bem devagar
+      // - 0.75–0.90: acelera (easeInQuad)
+      // - 0.90–1.00: desacelera até o fim (easeOutQuad)
+      function displayProgress(u) {
+        u = clamp01(u);
+        if (u <= 0.5) {
+          // mapeia 0..0.5 -> 0..0.5 com easeOutCubic
+          return 0.5 * easeOutCubic(u / 0.5);
+        } else if (u <= 0.75) {
+          // trecho lento: 0.5..0.75 -> 0.5..0.6 (apenas +0.1 ao longo de 25% do tempo)
+          const t = (u - 0.5) / 0.25; // 0..1
+          return 0.5 + 0.1 * t; // linear bem curto
+        } else if (u <= 0.9) {
+          // acelera: 0.75..0.9 -> 0.6..0.9 usando easeInQuad
+          const t = (u - 0.75) / 0.15; // 0..1
+          return 0.6 + 0.3 * easeInQuad(t);
+        } else {
+          // final devagar: 0.9..1 -> 0.9..1 via easeOutQuad
+          const t = (u - 0.9) / 0.1; // 0..1
+          return 0.9 + 0.1 * easeOutQuad(t);
+        }
+      }
+
+      // Atualiza a barra com base no tempo do vídeo
+      function update() {
+        const dur = video.duration || 0;
+        if (dur > 0) {
+          const u = clamp01(video.currentTime / dur);
+          const shown = displayProgress(u);
+          bar.style.width = (shown * 100).toFixed(3) + '%';
+        }
+        requestAnimationFrame(update);
+      }
+      requestAnimationFrame(update);
+
+      // Garante que não existam controles via teclado/mouse
+      // (só por excesso de zelo; o vídeo já está com pointer-events:none)
+      const block = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      };
+      ['click','dblclick','contextmenu','keydown','keyup','keypress','pointerdown','pointerup','touchstart','touchend']
+        .forEach(ev => video.addEventListener(ev, block, { passive: false }));
+
+      // Reinicia barra ao recomeçar (caso o vídeo faça loop no futuro)
+      video.addEventListener('seeking', () => {
+        // Mesmo se houver seek programático, recalculamos na próxima atualização
+      });
+    })();
+  </script>
+</body>
+</html>
